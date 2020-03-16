@@ -1,10 +1,7 @@
 package com.permissionx.guolindev
 
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Bundle
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 
 /**
@@ -12,28 +9,86 @@ import androidx.fragment.app.Fragment
  * @author guolin
  * @since 2019/11/2
  */
+typealias RequestCallback = PermissionBuilder.(allGranted: Boolean, grantedList: List<String>, deniedList: List<String>) -> Unit
 
-typealias PermissionCallback = (Boolean, List<String>) -> Unit
+typealias Callback = PermissionBuilder.(deniedList: MutableList<String>) -> Unit
+
+const val TAG = "InvisibleFragment"
+
+const val PERMISSION_CODE = 1
+
+const val SETTINGS_CODE = 2
 
 class InvisibleFragment : Fragment() {
 
-    private var callback: PermissionCallback? = null
+    private lateinit var permissionBuilder: PermissionBuilder
 
-    fun requestNow(cb: PermissionCallback, vararg permissions: String) {
-        callback = cb
-        requestPermissions(permissions, 1)
+    private var explainReasonCallback: Callback? = null
+
+    private var forwardToSettingsCallback: Callback? = null
+
+    private lateinit var requestCallback: RequestCallback
+
+    private lateinit var permissions: Array<out String>
+
+    fun requestNow(builder: PermissionBuilder, cb1: Callback?, cb2: Callback?, cb3: RequestCallback, vararg p: String) {
+        permissionBuilder = builder
+        explainReasonCallback = cb1
+        forwardToSettingsCallback = cb2
+        requestCallback = cb3
+        permissions = p
+        requestPermissions(permissions, PERMISSION_CODE)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        if (requestCode == 1) {
-            val deniedList = ArrayList<String>()
+        if (requestCode == PERMISSION_CODE) {
+            val grantedList = ArrayList<String>()
+            val showReasonList = ArrayList<String>()
+            val forwardList = ArrayList<String>()
             for ((index, result) in grantResults.withIndex()) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    deniedList.add(permissions[index])
+                if (result == PackageManager.PERMISSION_GRANTED) {
+                    grantedList.add(permissions[index])
+                    permissionBuilder.deniedPermissions.remove(permissions[index])
+                    permissionBuilder.permanentDeniedPermissions.remove(permissions[index])
+                } else {
+                    val shouldShowReason = shouldShowRequestPermissionRationale(permissions[index])
+                    if (shouldShowReason) {
+                        // denied permission can turn into permanent denied permissions
+                        showReasonList.add(permissions[index])
+                        permissionBuilder.deniedPermissions.add(permissions[index])
+                    } else {
+                        // permanent denied permission can not turn into denied permissions
+                        forwardList.add(permissions[index])
+                        permissionBuilder.permanentDeniedPermissions.add(permissions[index])
+                        permissionBuilder.deniedPermissions.remove(permissions[index])
+                    }
                 }
             }
-            val allGranted = deniedList.isEmpty()
-            callback?.let { it(allGranted, deniedList) }
+            permissionBuilder.grantedPermissions.clear() // clear first in case user turn some permissions off in settings.
+            permissionBuilder.grantedPermissions.addAll(grantedList)
+            val allGranted = permissionBuilder.grantedPermissions.size == permissionBuilder.allPermissions.size
+            if (allGranted) {
+                permissionBuilder.requestCallback(true, permissionBuilder.allPermissions, listOf())
+            } else {
+                if (explainReasonCallback != null && showReasonList.isNotEmpty()) {
+                    explainReasonCallback?.let { permissionBuilder.it(showReasonList) }
+                } else if (forwardToSettingsCallback != null && forwardList.isNotEmpty()) {
+                    forwardToSettingsCallback?.let { permissionBuilder.it(forwardList) }
+                }
+                if (!permissionBuilder.showDialogCalled) {
+                    val deniedList = ArrayList<String>()
+                    deniedList.addAll(permissionBuilder.deniedPermissions)
+                    deniedList.addAll(permissionBuilder.permanentDeniedPermissions)
+                    permissionBuilder.requestCallback(false, permissionBuilder.grantedPermissions.toList(), deniedList)
+                }
+            }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SETTINGS_CODE) {
+            permissionBuilder.requestAgain(permissionBuilder.forwardPermissions)
         }
     }
 
