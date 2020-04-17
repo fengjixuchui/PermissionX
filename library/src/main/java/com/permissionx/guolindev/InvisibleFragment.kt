@@ -7,12 +7,17 @@ import androidx.fragment.app.Fragment
 /**
  * Callback for [PermissionBuilder.request] method.
  */
-typealias RequestCallback = PermissionBuilder.(allGranted: Boolean, grantedList: List<String>, deniedList: List<String>) -> Unit
+typealias RequestCallback = (allGranted: Boolean, grantedList: List<String>, deniedList: List<String>) -> Unit
 
 /**
  * Callback for [PermissionBuilder.onExplainRequestReason] method.
  */
 typealias ExplainReasonCallback = ExplainReasonScope.(deniedList: MutableList<String>) -> Unit
+
+/**
+ * Callback for [PermissionBuilder.onExplainRequestReason] method, but with beforeRequest param.
+ */
+typealias ExplainReasonCallback2 = ExplainReasonScope.(deniedList: MutableList<String>, beforeRequest: Boolean) -> Unit
 
 /**
  * Callback for [PermissionBuilder.onForwardToSettings] method.
@@ -45,6 +50,11 @@ class InvisibleFragment : Fragment() {
     private var explainReasonCallback: ExplainReasonCallback? = null
 
     /**
+     * The callback for [PermissionBuilder.onExplainRequestReason] method, but with beforeRequest param. Maybe null.
+     */
+    private var explainReasonCallback2: ExplainReasonCallback2? = null
+
+    /**
      * The callback for [PermissionBuilder.onForwardToSettings] method. Maybe null.
      */
     private var forwardToSettingsCallback: ForwardToSettingsCallback? = null
@@ -62,17 +72,20 @@ class InvisibleFragment : Fragment() {
      * @param cb1
      *          The callback for [PermissionBuilder.onExplainRequestReason] method. Maybe null.
      * @param cb2
-     *          The callback for [PermissionBuilder.onForwardToSettings] method. Maybe null.
+     *          The callback for [PermissionBuilder.onExplainRequestReason] method but with beforeRequest param. Maybe null.
      * @param cb3
+     *          The callback for [PermissionBuilder.onForwardToSettings] method. Maybe null.
+     * @param cb4
      *          The callback for [PermissionBuilder.request] method. Can not be null.
      * @param permissions
      *          Permissions that you want to request.
      */
-    fun requestNow(builder: PermissionBuilder, cb1: ExplainReasonCallback?, cb2: ForwardToSettingsCallback?, cb3: RequestCallback, vararg permissions: String) {
+    fun requestNow(builder: PermissionBuilder, cb1: ExplainReasonCallback?, cb2: ExplainReasonCallback2?, cb3: ForwardToSettingsCallback?, cb4: RequestCallback, vararg permissions: String) {
         permissionBuilder = builder
         explainReasonCallback = cb1
-        forwardToSettingsCallback = cb2
-        requestCallback = cb3
+        explainReasonCallback2 = cb2
+        forwardToSettingsCallback = cb3
+        requestCallback = cb4
         requestPermissions(permissions, PERMISSION_CODE)
     }
 
@@ -81,7 +94,7 @@ class InvisibleFragment : Fragment() {
      * There may be 3 callbacks: [ExplainReasonCallback], [ForwardToSettingsCallback] and [RequestCallback].
      * Only one callback can be called normally(But not always true, see the exception in below codes).
      * The priority is [ExplainReasonCallback] -> [ForwardToSettingsCallback] -> [RequestCallback].
-     * Always try to call the higher priority callback. If that's not possible, goes to the lower ones.
+     * Always try to call the higher priority callback. If that's not possible, goes to the lower one.
      */
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         if (requestCode == PERMISSION_CODE) {
@@ -115,25 +128,31 @@ class InvisibleFragment : Fragment() {
             permissionBuilder.grantedPermissions.addAll(grantedList)
             val allGranted = permissionBuilder.grantedPermissions.size == permissionBuilder.allPermissions.size
             if (allGranted) { // If all permissions are granted, call RequestCallback directly.
-                permissionBuilder.requestCallback(true, permissionBuilder.allPermissions, listOf())
+                requestCallback(true, permissionBuilder.allPermissions, listOf())
             } else {
+                var goesToRequestCallback = true // If there's need goes to RequestCallback
                 // If explainReasonCallback is not null and there're denied permissions. Try the ExplainReasonCallback.
-                if (explainReasonCallback != null && showReasonList.isNotEmpty()) {
+                if ((explainReasonCallback != null || explainReasonCallback2 != null) && showReasonList.isNotEmpty()) {
+                    goesToRequestCallback = false // No need cause ExplainReasonCallback handles it
+                    explainReasonCallback2?.let { // callback ExplainReasonCallback2 prior to ExplainReasonCallback
+                        permissionBuilder.explainReasonScope.it(showReasonList, false)
+                    } ?:
                     explainReasonCallback?.let { permissionBuilder.explainReasonScope.it(showReasonList) }
                 }
                 // If forwardToSettingsCallback is not null and there're permanently denied permissions. Try the ForwardToSettingsCallback.
                 else if (forwardToSettingsCallback != null && forwardList.isNotEmpty()) {
+                    goesToRequestCallback = false // No need cause ForwardToSettingsCallback handles it
                     forwardToSettingsCallback?.let { permissionBuilder.forwardToSettingsScope.it(forwardList) }
                 }
                 // If showRequestReasonDialog or showForwardToSettingsDialog is not called. Try the RequestCallback.
-                // There's case that ExplainReasonCallback or ForwardToSettingsCallback is called, but developer didn't call
+                // There's case that ExplainReasonCallback or ForwardToSettingsCallback is called, but developer didn't invoke
                 // showRequestReasonDialog or showForwardToSettingsDialog in the callback.
                 // At this case and all other cases, RequestCallback will be called.
-                if (!permissionBuilder.showDialogCalled) {
+                if (goesToRequestCallback || !permissionBuilder.showDialogCalled) {
                     val deniedList = ArrayList<String>()
                     deniedList.addAll(permissionBuilder.deniedPermissions)
                     deniedList.addAll(permissionBuilder.permanentDeniedPermissions)
-                    permissionBuilder.requestCallback(false, permissionBuilder.grantedPermissions.toList(), deniedList)
+                    requestCallback(false, permissionBuilder.grantedPermissions.toList(), deniedList)
                 }
             }
         }
