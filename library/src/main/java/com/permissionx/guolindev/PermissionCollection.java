@@ -18,6 +18,7 @@ package com.permissionx.guolindev;
 
 import android.os.Build;
 
+import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 
 import com.permissionx.guolindev.request.PermissionBuilder;
@@ -41,13 +42,20 @@ public class PermissionCollection {
 
     private FragmentActivity activity;
 
+    private Fragment fragment;
+
     public PermissionCollection(FragmentActivity activity) {
         this.activity = activity;
+    }
+
+    public PermissionCollection(Fragment fragment) {
+        this.fragment = fragment;
     }
 
     /**
      * All permissions that you want to request.
      * @param permissions A vararg param to pass permissions.
+     * @return PermissionBuilder itself.
      */
     public PermissionBuilder permissions(String... permissions)  {
         return permissions(new ArrayList<>(Arrays.asList(permissions)));
@@ -56,6 +64,7 @@ public class PermissionCollection {
     /**
      * All permissions that you want to request.
      * @param permissions A vararg param to pass permissions.
+     * @return PermissionBuilder itself.
      */
     public PermissionBuilder permissions(List<String> permissions)  {
         Set<String> permissionSet = new HashSet<>(permissions);
@@ -74,7 +83,7 @@ public class PermissionCollection {
                 permissionsWontRequest.add(ACCESS_BACKGROUND_LOCATION);
             }
         }
-        return new PermissionBuilder(activity, permissionSet, requireBackgroundLocationPermission, permissionsWontRequest);
+        return new PermissionBuilder(activity, fragment, permissionSet, requireBackgroundLocationPermission, permissionsWontRequest);
     }
 
 }
