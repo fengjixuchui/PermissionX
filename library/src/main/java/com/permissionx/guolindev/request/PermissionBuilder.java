@@ -16,13 +16,11 @@
 
 package com.permissionx.guolindev.request;
 
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
 import android.provider.Settings;
-import android.text.TextUtils;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -34,6 +32,7 @@ import com.permissionx.guolindev.callback.ExplainReasonCallback;
 import com.permissionx.guolindev.callback.ExplainReasonCallbackWithBeforeParam;
 import com.permissionx.guolindev.callback.ForwardToSettingsCallback;
 import com.permissionx.guolindev.callback.RequestCallback;
+import com.permissionx.guolindev.dialog.DefaultDialog;
 
 import java.util.HashSet;
 import java.util.List;
@@ -61,6 +60,11 @@ public class PermissionBuilder {
      * Instance of fragment for everything as an alternative choice for activity.
      */
     Fragment fragment;
+
+    /**
+     * Instance of the current dialog that shows to user. We need to dismiss this dialog when InvisibleFragment destroyed.
+     */
+    Dialog currentDialog;
 
     /**
      * Normal runtime permissions that app want to request.
@@ -103,6 +107,13 @@ public class PermissionBuilder {
      * Holds permissions that have been permanently denied in the requested permissions. (Deny and never ask again)
      */
     Set<String> permanentDeniedPermissions = new HashSet<>();
+
+    /**
+     * When we request multiple permissions. Some are denied, some are permanently denied. Denied permissions will be callback first.
+     * And the permanently denied permissions will store in this tempPermanentDeniedPermissions. They will be callback once no more
+     * denied permissions exist.
+     */
+    Set<String> tempPermanentDeniedPermissions = new HashSet<>();
 
     /**
      * Holds permissions which should forward to Settings to allow them.
@@ -223,35 +234,8 @@ public class PermissionBuilder {
      * @param negativeText           Negative text on the negative button. Maybe null if this dialog should not be canceled.
      */
     void showHandlePermissionDialog(final ChainTask chainTask, final boolean showReasonOrGoSettings, final List<String> permissions, String message, String positiveText, String negativeText) {
-        showDialogCalled = true;
-        if (permissions == null || permissions.isEmpty()) {
-            chainTask.finish();
-            return;
-        }
-        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-        builder.setMessage(message);
-        builder.setCancelable(false);
-        builder.setPositiveButton(positiveText, new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                if (showReasonOrGoSettings) {
-                    chainTask.requestAgain(permissions);
-                } else {
-                    forwardToSettings(permissions);
-                }
-            }
-        });
-        if (!TextUtils.isEmpty(negativeText)) {
-            builder.setNegativeButton(negativeText, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    chainTask.finish();
-                }
-            });
-        }
-        Dialog dialog = builder.create();
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.show();
+        DefaultDialog defaultDialog = new DefaultDialog(activity, permissions, message, positiveText, negativeText);
+        showHandlePermissionDialog(chainTask, showReasonOrGoSettings, defaultDialog);
     }
 
     /**
@@ -266,10 +250,11 @@ public class PermissionBuilder {
     void showHandlePermissionDialog(final ChainTask chainTask, final boolean showReasonOrGoSettings, @NonNull final RationaleDialog dialog) {
         showDialogCalled = true;
         final List<String> permissions = dialog.getPermissionsToRequest();
-        if (permissions == null || permissions.isEmpty()) {
+        if (permissions.isEmpty()) {
             chainTask.finish();
             return;
         }
+        currentDialog = dialog;
         dialog.show();
         View positiveButton = dialog.getPositiveButton();
         View negativeButton = dialog.getNegativeButton();
@@ -297,6 +282,12 @@ public class PermissionBuilder {
                 }
             });
         }
+        currentDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                currentDialog = null;
+            }
+        });
     }
 
     /**
