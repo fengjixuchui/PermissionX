@@ -25,24 +25,27 @@ class MainFragment : Fragment() {
                 Manifest.permission.CAMERA,
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.RECORD_AUDIO,
-                    Manifest.permission.READ_CALENDAR,
-                    Manifest.permission.READ_CALL_LOG,
-                    Manifest.permission.READ_CONTACTS,
-                    Manifest.permission.READ_PHONE_STATE,
-                    Manifest.permission.BODY_SENSORS,
-                    Manifest.permission.ACTIVITY_RECOGNITION,
-                    Manifest.permission.SEND_SMS,
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
+//                    Manifest.permission.READ_CALENDAR,
+//                    Manifest.permission.READ_CALL_LOG,
+//                    Manifest.permission.READ_CONTACTS,
+//                    Manifest.permission.READ_PHONE_STATE,
+//                    Manifest.permission.BODY_SENSORS,
+//                    Manifest.permission.ACTIVITY_RECOGNITION,
+//                    Manifest.permission.SEND_SMS,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
                 )
                 .onExplainRequestReason { scope, deniedList, beforeRequest ->
-                    val message = "PermissionX need following permissions for further usage"
+                    val message = "PermissionX needs following permissions to continue"
                     scope.showRequestReasonDialog(deniedList, message, "Allow", "Deny")
-                }
-//                .onForwardToSettings { scope, deniedList ->
 //                    val message = "Please allow the following permissions in settings"
-//                    val dialog = CustomDialog(context, message, deniedList)
-//                    scope.showForwardToSettingsDialog(dialog)
-//                }
+//                    val dialog = CustomDialogFragment(message, deniedList)
+//                    scope.showRequestReasonDialog(dialog)
+                }
+                .onForwardToSettings { scope, deniedList ->
+                    val message = "Please allow following permissions in settings"
+                    val dialog = CustomDialogFragment(message, deniedList)
+                    scope.showForwardToSettingsDialog(dialog)
+                }
                 .request { allGranted, grantedList, deniedList ->
                     if (allGranted) {
                         Toast.makeText(activity, "All permissions are granted", Toast.LENGTH_SHORT).show()
